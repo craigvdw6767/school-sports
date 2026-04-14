@@ -447,7 +447,7 @@ function MatchDetail({match, user, onBack, onMatchUpdated}) {
   const [wickets,setWickets]=useState(String(match.wickets??0));
   const [overs,setOvers]=useState(String(match.overs??0));
   const sport=SPORTS[match.sport];
-  const confirmations=match.confirmations||0;
+  const [confirmations, setConfirmations] = useState(match.confirmations||0);
   const scoreLocked=confirmations>=3;
 
   async function submitUpdate() {
@@ -482,7 +482,9 @@ window.location.reload();
   async function handleConfirm() {
     if (hasVoted||scoreLocked) return;
     setHasVoted(true);
-    const isFinal = (confirmations+1)>=3;
+    const newCount = confirmations + 1;
+    setConfirmations(newCount);
+    const isFinal = newCount>=3;
     await supabase.from('scores').update({ confirmed_final:isFinal }).eq('match_id', match.id);
     if (isFinal) {
       await supabase.from('matches').update({ status:'final' }).eq('id', match.id);
