@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-rout
 import Landing from "./Landing";
 import SchoolPage from "./SchoolPage";
 import SchoolsPage from "./SchoolsPage";
+import { Helmet } from "react-helmet-async";
 
 const SPORTS = {
   football:   { name:"Football",   icon:"⚽" },
@@ -651,7 +652,19 @@ function MatchPage({user}) {
   if (loading) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"#888"}}>Loading...</div>;
   if (!match) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"#888"}}>Match not found.</div>;
 
-  return <MatchDetail match={match} user={user} onBack={()=>navigate("/")} onMatchUpdated={loadMatch}/>;
+  return (
+  <>
+    <Helmet>
+      <title>{match.homeTeam} vs {match.awayTeam} · School Scores</title>
+      <meta property="og:title" content={`${match.homeTeam} ${match.homeScore} - ${match.awayScore} ${match.awayTeam}`}/>
+      <meta property="og:description" content={`${match.status==="live"?"🔴 LIVE · ":match.status==="final"?"✅ FINAL · ":"📅 "}${SPORTS[match.sport]?.name} · ${match.homeDesc}`}/>
+      <meta property="og:url" content={`https://schoolscores.co.za/match/${match.id}`}/>
+      <meta property="og:site_name" content="School Scores"/>
+      <meta property="og:type" content="website"/>
+    </Helmet>
+    <MatchDetail match={match} user={user} onBack={()=>navigate("/")} onMatchUpdated={loadMatch}/>
+  </>
+);
 }
 
 // ── App root ──────────────────────────────────────────
