@@ -291,25 +291,39 @@ function MatchCard({match,onClick}) {
 }
 
 // ── Add fixture ───────────────────────────────────────
-function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
-  const [sport,setSport]=useState("");
-  const [date,setDate]=useState("");
-  const [time,setTime]=useState("");
-  const [homeTeam,setHomeTeam]=useState("");
-  const [homeDesc,setHomeDesc]=useState("");
-  const [awayTeam,setAwayTeam]=useState("");
-  const [awayDesc,setAwayDesc]=useState("");
-  const [err,setErr]=useState("");
-  const [loading,setLoading]=useState(false);
+function AddFixture({matches, allSchools, schoolsList, user, onAdd, onCancel}) {
+  const [sport, setSport] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [homeSchoolId, setHomeSchoolId] = useState("");
+  const [homeDesc, setHomeDesc] = useState("");
+  const [awaySchoolId, setAwaySchoolId] = useState("");
+  const [awayDesc, setAwayDesc] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState("");
+  const [homeSearch, setHomeSearch] = useState("");
+  const [awaySearch, setAwaySearch] = useState("");
+
+  const filteredHome = schoolsList.filter(s =>
+    s.name.toLowerCase().includes(homeSearch.toLowerCase())
+  );
+  const filteredAway = schoolsList.filter(s =>
+    s.name.toLowerCase().includes(awaySearch.toLowerCase())
+  );
+
+  const homeSchool = schoolsList.find(s => s.id === homeSchoolId);
+  const awaySchool = schoolsList.find(s => s.id === awaySchoolId);
 
   async function handleAdd() {
     if (!sport) { setErr("Please select a sport."); return; }
-    if (!date)  { setErr("Please select a date."); return; }
-    if (!homeTeam.trim()) { setErr("Please enter the home team."); return; }
+    if (!date) { setErr("Please select a date."); return; }
+    if (!homeSchoolId) { setErr("Please select the home school."); return; }
     if (!homeDesc) { setErr("Please select a description for the home team."); return; }
-    if (!awayTeam.trim()) { setErr("Please enter the away team."); return; }
+    if (!awaySchoolId) { setErr("Please select the away school."); return; }
     if (!awayDesc) { setErr("Please select a description for the away team."); return; }
-    if (normalize(homeTeam)===normalize(awayTeam)&&normalize(homeDesc)===normalize(awayDesc)) { setErr("Home and away team cannot be the same."); return; }
+    if (homeSchoolId === awaySchoolId && homeDesc === awayDesc) {
+      setErr("Home and away team cannot be the same."); return;
+    }
 
     setLoading(true);
 
@@ -320,22 +334,10 @@ function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
       sportRow = data;
     }
 
-    // Upsert schools
-    async function upsertSchool(name) {
-      let { data } = await supabase.from('schools').select('id').eq('name', name).maybeSingle();
-      if (!data) {
-        const { data: newS } = await supabase.from('schools').insert({ name }).select('id').single();
-        data = newS;
-      }
-      return data;
-    }
-
-    const [homeSchool, awaySchool] = await Promise.all([upsertSchool(homeTeam.trim()), upsertSchool(awayTeam.trim())]);
-
     const { data: match, error } = await supabase.from('matches').insert({
       sport_id: sportRow.id,
-      home_school_id: homeSchool.id,
-      away_school_id: awaySchool.id,
+      home_school_id: homeSchoolId,
+      away_school_id: awaySchoolId,
       home_team_desc: homeDesc,
       away_team_desc: awayDesc,
       match_date: date,
@@ -352,10 +354,53 @@ function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
       return;
     }
 
-    // Create empty scores row
     await supabase.from('scores').insert({ match_id: match.id });
     setLoading(false);
     onAdd();
+  }
+
+  function SchoolPicker({label, searchVal, setSearchVal, selectedId, setSelectedId, filtered}) {
+    const [open, setOpen] = useState(false);
+    const selected = schoolsList.find(s => s.id === selectedId);
+    return (
+      <div style={{marginBottom:10}}>
+        <label style={labelStyle}>{label}</label>
+        {selected ? (
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
+            <div>
+              <span style={{fontSize:14,color:"var(--color-text-primary)",fontWeight:500}}>{selected.name}</span>
+              {selected.city && <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:8}}>{selected.city}</span>}
+            </div>
+            <button onClick={()=>{setSelectedId("");setSearchVal("");}} style={{background:"none",border:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>
+          </div>
+        ) : (
+          <div style={{position:"relative"}}>
+            <input
+              value={searchVal}
+              onChange={e=>{setSearchVal(e.target.value);setOpen(true);}}
+              onFocus={()=>setOpen(true)}
+              onBlur={()=>setTimeout(()=>setOpen(false),150)}
+              placeholder="Search school..."
+              style={inputStyle}
+            />
+            {open && filtered.length > 0 && (
+              <div style={{position:"absolute",top:"100%",left:0,right:0,background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,zIndex:10,maxHeight:200,overflowY:"auto"}}>
+                {filtered.map(s => (
+                  <div key={s.id}
+                    onMouseDown={()=>{setSelectedId(s.id);setSearchVal("");setOpen(false);}}
+                    style={{padding:"10px 12px",cursor:"pointer",borderBottom:"0.5px solid var(--color-border-tertiary)"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="var(--color-background-secondary)"}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <div style={{fontSize:14,color:"var(--color-text-primary)"}}>{s.name}</div>
+                    {s.city && <div style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{s.city}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -363,6 +408,7 @@ function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
       <button onClick={onCancel} style={{background:"none",border:"none",color:"var(--color-text-secondary)",fontSize:14,cursor:"pointer",padding:"12px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
       <div style={{fontSize:18,fontWeight:500,color:"var(--color-text-primary)",marginBottom:16}}>Add fixture</div>
       {err&&<div style={{background:"#fee2e2",border:"0.5px solid #fca5a5",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#991b1b",marginBottom:14}}>{err}</div>}
+
       <div style={{marginBottom:14}}>
         <label style={labelStyle}>Sport</label>
         <select value={sport} onChange={e=>{setSport(e.target.value);setErr("");}} style={inputStyle}>
@@ -370,6 +416,7 @@ function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
           {Object.entries(SPORTS).map(([k,v])=><option key={k} value={k}>{v.icon} {v.name}</option>)}
         </select>
       </div>
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         <div>
           <label style={labelStyle}>Date</label>
@@ -380,13 +427,21 @@ function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
           <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={inputStyle}/>
         </div>
       </div>
-      {[["Home team",homeTeam,setHomeTeam,homeDesc,setHomeDesc],["Away team",awayTeam,setAwayTeam,awayDesc,setAwayDesc]].map(([label,team,setTeam,desc,setDesc])=>(
+
+      {[
+        ["Home team", homeSearch, setHomeSearch, homeSchoolId, setHomeSchoolId, filteredHome, homeDesc, setHomeDesc],
+        ["Away team", awaySearch, setAwaySearch, awaySchoolId, setAwaySchoolId, filteredAway, awayDesc, setAwayDesc],
+      ].map(([label, searchVal, setSearchVal, selectedId, setSelectedId, filtered, desc, setDesc]) => (
         <div key={label} style={{background:"var(--color-background-secondary)",borderRadius:10,padding:12,marginBottom:12}}>
           <div style={{fontSize:12,fontWeight:500,color:"var(--color-text-secondary)",marginBottom:10}}>{label}</div>
-          <div style={{marginBottom:10}}>
-            <label style={labelStyle}>School name</label>
-            <Combobox value={team} onChange={v=>{setTeam(v);setErr("");}} options={allSchools} placeholder="Type or select school..."/>
-          </div>
+          <SchoolPicker
+            label="School"
+            searchVal={searchVal}
+            setSearchVal={setSearchVal}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            filtered={filtered}
+          />
           <div>
             <label style={labelStyle}>Team description</label>
             <select value={desc} onChange={e=>{setDesc(e.target.value);setErr("");}} style={inputStyle}>
@@ -396,6 +451,7 @@ function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
           </div>
         </div>
       ))}
+
       <button onClick={handleAdd} disabled={loading} style={{width:"100%",padding:12,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,marginTop:8,opacity:loading?0.7:1}}>
         {loading?"Adding...":"Add fixture"}
       </button>
@@ -614,6 +670,18 @@ export default function App() {
   const [schoolSearch,setSchoolSearch]=useState("");
   const [showFilters,setShowFilters]=useState(false);
   const [favOnly,setFavOnly]=useState(false);
+  const [schoolsList, setSchoolsList] = useState([]);
+
+useEffect(() => {
+  async function loadSchools() {
+    const { data } = await supabase
+      .from('schools')
+      .select('id, name, city, abbreviation')
+      .order('name', { ascending: true });
+    if (data) setSchoolsList(data);
+  }
+  loadSchools();
+}, []);
 
   // Auth listener
   useEffect(()=>{
@@ -682,7 +750,7 @@ export default function App() {
   if (authLoading) return <div style={{textAlign:"center",padding:40,color:"var(--color-text-secondary)",fontFamily:"var(--font-sans)"}}>Loading...</div>;
   if (screen==="auth") return <AuthScreen onDone={()=>setScreen("home")}/>;
   if (screen==="profile"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><ProfileScreen user={user} matches={matches} onLogout={handleLogout} onBack={()=>setScreen("home")}/></div>;
-  if (screen==="add"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><AddFixture matches={matches} allSchools={allSchools} user={user} onAdd={()=>{loadMatches();setScreen("home");}} onCancel={()=>setScreen("home")}/></div>;
+  if (screen==="add"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><AddFixture matches={matches} allSchools={allSchools} schoolsList={schoolsList} user={user} onAdd={()=>{loadMatches();setScreen("home");}} onCancel={()=>setScreen("home")}/></div>;
   if (selected) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><MatchDetail match={selected} user={user} onBack={()=>setSelectedId(null)} onMatchUpdated={()=>{loadMatches();}}/></div>;
 
   const anyFilter=statusFilter!=="all"||sportFilter!=="all"||schoolSearch.trim();
