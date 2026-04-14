@@ -4,20 +4,21 @@ export default function Landing() {
 
       {/* Nav */}
       <div style={{padding:"16px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"0.5px solid #1a1a1a",maxWidth:900,margin:"0 auto"}}>
-        <div style={{fontSize:16,fontWeight:500}}>School Scores</div>
-        <div style={{display:"flex",gap:12,alignItems:"center"}}>
-        <span style={{fontSize:13,color:"#ccc",cursor:"pointer"}}>For schools</span>
-        <span style={{fontSize:13,color:"#ccc",cursor:"pointer"}}>Sponsors</span>
-        <a href="/app" style={{textDecoration:"none",background:"none",border:"0.5px solid #555",borderRadius:20,padding:"6px 14px",fontSize:13,color:"#fff",cursor:"pointer"}}>Sign in</a>
-        <a href="/app" style={{textDecoration:"none",background:"#fff",borderRadius:20,padding:"6px 14px",fontSize:13,color:"#111",fontWeight:500,cursor:"pointer"}}>Sign up</a>
-      </div>
-    </div>
+  <div/>
+  <div style={{display:"flex",gap:12,alignItems:"center"}}>
+    <a href="/app" style={{textDecoration:"none",background:"none",border:"0.5px solid #555",borderRadius:20,padding:"6px 14px",fontSize:13,color:"#fff",cursor:"pointer"}}>Sign in</a>
+    <a href="/app" style={{textDecoration:"none",background:"#fff",borderRadius:20,padding:"6px 14px",fontSize:13,color:"#111",fontWeight:500,cursor:"pointer"}}>Sign up</a>
+  </div>
+</div>
 
       {/* Hero */}
       <div style={{padding:"64px 24px 56px",maxWidth:900,margin:"0 auto",textAlign:"center"}}>
+      <div style={{fontSize:36,fontWeight:500,color:"#EF9F27",letterSpacing:"6px",marginBottom:16}}>
+  SCHOOL SCORES
+</div>
         <div style={{display:"inline-block",background:"#2a2a2a",color:"#fff",border:"0.5px solid #666",borderRadius:20,padding:"4px 14px",fontSize:12,marginBottom:20}}>
           🏆 Live · Crowdsourced · Free
-        </div>
+      </div>
         <h1 style={{fontSize:52,fontWeight:500,lineHeight:1.1,marginBottom:16,letterSpacing:-1,color:"#fff"}}>
           Be there.<br/>Even when you're not.
         </h1>
