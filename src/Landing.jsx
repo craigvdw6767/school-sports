@@ -12,8 +12,8 @@ export default function Landing() {
 </div>
 
       {/* Hero */}
-      <div style={{padding:"64px 24px 56px",maxWidth:900,margin:"0 auto",textAlign:"center"}}>
-      <div style={{fontSize:36,fontWeight:500,color:"#EF9F27",letterSpacing:"6px",marginBottom:16}}>
+      <div style={{padding:"32px 24px 56px",maxWidth:900,margin:"0 auto",textAlign:"center"}}>
+      <div style={{fontSize:36,fontWeight:500,color:"#EF9F27",letterSpacing:"6px",marginTop:64,marginBottom:24}}>
   SCHOOL SCORES
 </div>
         <div style={{display:"inline-block",background:"#2a2a2a",color:"#fff",border:"0.5px solid #666",borderRadius:20,padding:"4px 14px",fontSize:12,marginBottom:20}}>
