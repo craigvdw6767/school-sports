@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { supabase } from "./lib/supabase";
 
 const SPORTS = {
   football:   { name:"Football",   icon:"⚽" },
@@ -10,39 +11,14 @@ const SPORTS = {
   tennis:     { name:"Tennis",     icon:"🎾" },
 };
 
+const SPORT_NAME_TO_KEY = Object.fromEntries(
+  Object.entries(SPORTS).map(([k,v]) => [v.name.toLowerCase(), k])
+);
+
 const TEAM_DESCRIPTIONS = ["1st XI","2nd XI","3rd XI","U10","U11","U12","U13","U14","U15","U16","U17","U18","A Team","B Team","C Team","Senior","Junior"];
 const KNOWN_SCHOOLS = ["St John's","Riverside High","Northview","Greenfield","Westpark","Lakeside","Cedar Park"];
 
-const INIT_MATCHES = [
-  { id:1, sport:"football",   homeTeam:"St John's",     homeDesc:"1st XI", awayTeam:"Riverside High", awayDesc:"1st XI", homeScore:2,   awayScore:1,  period:"2nd Half", status:"live",     date:"",time:"67'",      confirmations:0, wickets:null, overs:null, updates:[
-    { id:1, author:"Parent (Dave)", verified:false, text:"GOAL! St John's score from a corner kick!", ts:Date.now()-900000 },
-    { id:2, author:"Parent (Sue)",  verified:false, text:"Riverside equalised — great free kick",     ts:Date.now()-600000 },
-    { id:3, author:"Parent (Dave)", verified:false, text:"St John's take the lead again! 2-1!",       ts:Date.now()-180000 },
-  ]},
-  { id:2, sport:"netball",    homeTeam:"St John's",     homeDesc:"U14",    awayTeam:"Northview",      awayDesc:"U14",    homeScore:18,  awayScore:22, period:"Q3",       status:"live",     date:"",time:"",         confirmations:0, wickets:null, overs:null, updates:[
-    { id:1, author:"Ms Patel", verified:true, text:"Great start for Northview — sharp shooting", ts:Date.now()-1200000 },
-    { id:2, author:"Thandi",   verified:true, text:"St John's pulling back — 18-22 now",         ts:Date.now()-300000  },
-  ]},
-  { id:3, sport:"cricket",    homeTeam:"St John's",     homeDesc:"1st XI", awayTeam:"Greenfield",     awayDesc:"1st XI", homeScore:145, awayScore:98, period:"2nd Inn",  status:"live",     date:"",time:"32 overs", confirmations:0, wickets:3,    overs:32,   updates:[
-    { id:1, author:"Raj", verified:true, text:"Solid batting from St John's — 145 all out",    ts:Date.now()-3600000 },
-    { id:2, author:"Raj", verified:true, text:"Greenfield struggling — 3 wickets down for 98", ts:Date.now()-600000  },
-  ]},
-  { id:4, sport:"rugby",      homeTeam:"St John's",     homeDesc:"U16",    awayTeam:"Westpark",       awayDesc:"U16",    homeScore:21,  awayScore:14, period:"FT",       status:"final",    date:"",time:"",         confirmations:3, wickets:null, overs:null, updates:[
-    { id:1, author:"Coach Williams", verified:true, text:"Full time! Great win for the boys!", ts:Date.now()-7200000 },
-  ]},
-  { id:5, sport:"hockey",     homeTeam:"St John's",     homeDesc:"U12",    awayTeam:"Lakeside",       awayDesc:"U12",    homeScore:0,   awayScore:0,  period:"1st Half", status:"upcoming", date:"",time:"14:30",    confirmations:0, wickets:null, overs:null, updates:[] },
-  { id:6, sport:"basketball", homeTeam:"St John's",     homeDesc:"U15",    awayTeam:"Cedar Park",     awayDesc:"U15",    homeScore:0,   awayScore:0,  period:"Q1",       status:"upcoming", date:"",time:"15:00",    confirmations:0, wickets:null, overs:null, updates:[] },
-  { id:7, sport:"football",   homeTeam:"Northview",     homeDesc:"2nd XI", awayTeam:"Greenfield",     awayDesc:"2nd XI", homeScore:1,   awayScore:1,  period:"FT",       status:"final",    date:"",time:"",         confirmations:3, wickets:null, overs:null, updates:[
-    { id:1, author:"Kim", verified:true, text:"Great game — ended all square", ts:Date.now()-3600000 },
-  ]},
-  { id:8, sport:"tennis",     homeTeam:"Riverside High",homeDesc:"U13",    awayTeam:"Cedar Park",     awayDesc:"U13",    homeScore:2,   awayScore:0,  period:"Set 2",    status:"live",     date:"",time:"",         confirmations:0, wickets:null, overs:null, updates:[] },
-];
-
 function normalize(s) { return s.trim().toLowerCase().replace(/\s+/g," "); }
-function matchKey(sport,tA,dA,tB,dB) {
-  const a = normalize(tA)+"|"+normalize(dA), b = normalize(tB)+"|"+normalize(dB);
-  return sport+"||"+[a,b].sort().join("||");
-}
 function timeAgo(ts) {
   const s = Math.floor((Date.now()-ts)/1000);
   if (s<60) return "just now";
@@ -53,6 +29,36 @@ function timeAgo(ts) {
 function fmtDate(d) {
   if (!d) return null;
   return new Date(d).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+}
+
+function mapMatch(m) {
+  const sportKey = SPORT_NAME_TO_KEY[m.sport?.name?.toLowerCase()] ?? "football";
+  return {
+    id: m.id,
+    sport: sportKey,
+    homeTeam: m.home_school?.name ?? "",
+    homeDesc: m.home_team_desc ?? "",
+    awayTeam: m.away_school?.name ?? "",
+    awayDesc: m.away_team_desc ?? "",
+    homeScore: m.scores?.home_score ?? 0,
+    awayScore: m.scores?.away_score ?? 0,
+    wickets: m.scores?.away_wickets ?? null,
+    overs: m.scores?.away_overs ?? null,
+    status: m.status ?? "upcoming",
+    date: m.match_date ?? "",
+    time: m.scheduled_at ? new Date(m.scheduled_at).toTimeString().slice(0,5) : "",
+    period: m.period ?? "",
+    confirmations: m.scores?.confirmed_final ? 3 : 0,
+    updates: (m.spectator_updates ?? [])
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+      .map(u => ({
+        id: u.id,
+        author: u.author_name ?? "User",
+        verified: true,
+        text: u.content,
+        ts: new Date(u.created_at).getTime(),
+      })),
+  };
 }
 
 // ── UI atoms ──────────────────────────────────────────
@@ -100,32 +106,44 @@ function Combobox({value,onChange,options,placeholder}) {
   );
 }
 
-// ── Auth screens ──────────────────────────────────────
-function AuthScreen({users,onLogin,onRegister}) {
+// ── Auth screen ───────────────────────────────────────
+function AuthScreen({onDone}) {
   const [mode,setMode]=useState("login");
   const [name,setName]=useState("");
   const [email,setEmail]=useState("");
   const [pw,setPw]=useState("");
   const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [message,setMessage]=useState("");
 
-  function handleLogin() {
-    const u=users.find(u=>normalize(u.email)===normalize(email)&&u.pw===pw);
-    if (!u) { setErr("Incorrect email or password."); return; }
-    onLogin(u);
+  async function handleLogin() {
+    setLoading(true); setErr("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+    setLoading(false);
+    if (error) { setErr(error.message); return; }
+    onDone();
   }
-  function handleRegister() {
+
+  async function handleRegister() {
     if (!name.trim()) { setErr("Please enter your name."); return; }
-    if (!email.includes("@")) { setErr("Please enter a valid email."); return; }
     if (pw.length<6) { setErr("Password must be at least 6 characters."); return; }
-    if (users.find(u=>normalize(u.email)===normalize(email))) { setErr("An account with this email already exists."); return; }
-    const u={id:Date.now(),name:name.trim(),email:email.trim().toLowerCase(),pw,favSchools:[],favTeams:[]};
-    onRegister(u);
+    setLoading(true); setErr("");
+    const { error } = await supabase.auth.signUp({
+      email,
+      password: pw,
+      options: { data: { display_name: name.trim() } }
+    });
+    setLoading(false);
+    if (error) { setErr(error.message); return; }
+    setMessage("Account created! Check your email to confirm, then sign in.");
+    setMode("login");
   }
 
   return (
     <div style={{maxWidth:380,margin:"0 auto",padding:"32px 24px",fontFamily:"var(--font-sans)"}}>
       <div style={{fontSize:22,fontWeight:500,color:"var(--color-text-primary)",marginBottom:4}}>School Sports</div>
       <div style={{fontSize:13,color:"var(--color-text-secondary)",marginBottom:28}}>{mode==="login"?"Sign in to post updates":"Create your account"}</div>
+      {message&&<div style={{background:"#f0fdf4",border:"0.5px solid #bbf7d0",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#166534",marginBottom:14}}>{message}</div>}
       {err&&<div style={{background:"#fee2e2",border:"0.5px solid #fca5a5",borderRadius:8,padding:"10px 14px",fontSize:13,color:"#991b1b",marginBottom:14}}>{err}</div>}
       {mode==="register"&&(
         <div style={{marginBottom:12}}>
@@ -141,13 +159,13 @@ function AuthScreen({users,onLogin,onRegister}) {
         <label style={labelStyle}>Password</label>
         <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder={mode==="register"?"Min 6 characters":"Password"} style={inputStyle}/>
       </div>
-      <button onClick={mode==="login"?handleLogin:handleRegister}
-        style={{width:"100%",padding:11,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:14,fontWeight:500,marginBottom:14}}>
-        {mode==="login"?"Sign in":"Create account"}
+      <button onClick={mode==="login"?handleLogin:handleRegister} disabled={loading}
+        style={{width:"100%",padding:11,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:14,fontWeight:500,marginBottom:14,opacity:loading?0.7:1}}>
+        {loading?"Please wait...":(mode==="login"?"Sign in":"Create account")}
       </button>
       <div style={{textAlign:"center",fontSize:13,color:"var(--color-text-secondary)"}}>
         {mode==="login"?"Don't have an account? ":"Already have an account? "}
-        <button onClick={()=>{setMode(m=>m==="login"?"register":"login");setErr("");}} style={{background:"none",border:"none",color:"#1d4ed8",cursor:"pointer",fontSize:13,padding:0}}>
+        <button onClick={()=>{setMode(m=>m==="login"?"register":"login");setErr("");setMessage("");}} style={{background:"none",border:"none",color:"#1d4ed8",cursor:"pointer",fontSize:13,padding:0}}>
           {mode==="login"?"Create one":"Sign in"}
         </button>
       </div>
@@ -156,36 +174,54 @@ function AuthScreen({users,onLogin,onRegister}) {
 }
 
 // ── Profile screen ────────────────────────────────────
-function ProfileScreen({user,matches,onSave,onLogout,onBack}) {
+function ProfileScreen({user,matches,onLogout,onBack}) {
   const allSchools=useMemo(()=>{
     const s=new Set(KNOWN_SCHOOLS);
     matches.forEach(m=>{s.add(m.homeTeam);s.add(m.awayTeam);});
     return Array.from(s).sort();
   },[matches]);
 
-  const [favSchools,setFavSchools]=useState(user.favSchools||[]);
-  const [favTeams,setFavTeams]=useState(user.favTeams||[]);
+  const [favSchools,setFavSchools]=useState([]);
+  const [favTeams,setFavTeams]=useState([]);
   const [saved,setSaved]=useState(false);
+  const [loading,setLoading]=useState(false);
 
-  function toggleSchool(s) {
-    setFavSchools(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s]);
-    setSaved(false);
+  useEffect(()=>{
+    async function loadFavs() {
+      const { data } = await supabase
+        .from('user_favourites')
+        .select('school:schools(name), sport:sports(name)')
+        .eq('user_id', user.id);
+      if (data) {
+        setFavSchools(data.filter(f=>f.school).map(f=>f.school.name));
+        setFavTeams(data.filter(f=>f.sport).map(f=>f.sport.name));
+      }
+    }
+    loadFavs();
+  },[user.id]);
+
+  async function save() {
+    setLoading(true);
+    // Update display name in profile
+    await supabase.from('profiles').update({ display_name: user.user_metadata?.display_name }).eq('id', user.id);
+    setSaved(true);
+    setLoading(false);
   }
-  function toggleTeam(t) {
-    setFavTeams(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t]);
-    setSaved(false);
-  }
-  function save() { onSave({...user,favSchools,favTeams}); setSaved(true); }
+
+  function toggleSchool(s) { setFavSchools(prev=>prev.includes(s)?prev.filter(x=>x!==s):[...prev,s]); setSaved(false); }
+  function toggleTeam(t) { setFavTeams(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t]); setSaved(false); }
+
+  const displayName = user.user_metadata?.display_name ?? user.email;
 
   return (
     <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px 80px",fontFamily:"var(--font-sans)"}}>
       <button onClick={onBack} style={{background:"none",border:"none",color:"var(--color-text-secondary)",fontSize:14,cursor:"pointer",padding:"12px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
       <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:24}}>
         <div style={{width:48,height:48,borderRadius:"50%",background:"#eff6ff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:500,color:"#1d4ed8"}}>
-          {user.name.charAt(0).toUpperCase()}
+          {displayName.charAt(0).toUpperCase()}
         </div>
         <div>
-          <div style={{fontSize:17,fontWeight:500,color:"var(--color-text-primary)"}}>{user.name}</div>
+          <div style={{fontSize:17,fontWeight:500,color:"var(--color-text-primary)"}}>{displayName}</div>
           <div style={{fontSize:13,color:"var(--color-text-secondary)"}}>{user.email}</div>
         </div>
       </div>
@@ -208,7 +244,7 @@ function ProfileScreen({user,matches,onSave,onLogout,onBack}) {
         ))}
       </div>
 
-      <button onClick={save} style={{width:"100%",padding:11,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:14,fontWeight:500,marginBottom:12}}>
+      <button onClick={save} disabled={loading} style={{width:"100%",padding:11,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:14,fontWeight:500,marginBottom:12,opacity:loading?0.7:1}}>
         {saved?"Saved!":"Save preferences"}
       </button>
       <button onClick={onLogout} style={{width:"100%",padding:11,borderRadius:10,background:"none",color:"#991b1b",border:"0.5px solid #fca5a5",cursor:"pointer",fontSize:14}}>
@@ -254,8 +290,8 @@ function MatchCard({match,onClick}) {
   );
 }
 
-// ── Add fixture form ──────────────────────────────────
-function AddFixture({matches,allSchools,onAdd,onCancel}) {
+// ── Add fixture ───────────────────────────────────────
+function AddFixture({matches,allSchools,user,onAdd,onCancel}) {
   const [sport,setSport]=useState("");
   const [date,setDate]=useState("");
   const [time,setTime]=useState("");
@@ -264,23 +300,62 @@ function AddFixture({matches,allSchools,onAdd,onCancel}) {
   const [awayTeam,setAwayTeam]=useState("");
   const [awayDesc,setAwayDesc]=useState("");
   const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
 
-  function validate() {
-    if (!sport) return "Please select a sport.";
-    if (!date)  return "Please select a date.";
-    if (!homeTeam.trim()) return "Please enter the home team.";
-    if (!homeDesc) return "Please select a description for the home team.";
-    if (!awayTeam.trim()) return "Please enter the away team.";
-    if (!awayDesc) return "Please select a description for the away team.";
-    if (normalize(homeTeam)===normalize(awayTeam)&&normalize(homeDesc)===normalize(awayDesc)) return "Home and away team cannot be the same.";
-    const key=matchKey(sport,homeTeam,homeDesc,awayTeam,awayDesc);
-    const dup=matches.find(m=>matchKey(m.sport,m.homeTeam,m.homeDesc,m.awayTeam,m.awayDesc)===key);
-    if (dup) return `This fixture already exists: ${dup.homeTeam} ${dup.homeDesc} vs ${dup.awayTeam} ${dup.awayDesc}.`;
-    return "";
-  }
-  function handleAdd() {
-    const e=validate(); if (e){setErr(e);return;}
-    onAdd({id:Date.now(),sport,homeTeam:homeTeam.trim(),homeDesc,awayTeam:awayTeam.trim(),awayDesc,homeScore:0,awayScore:0,period:Object.keys(SPORTS[sport])[0]||"",status:"upcoming",date,time,confirmations:0,wickets:null,overs:null,updates:[]});
+  async function handleAdd() {
+    if (!sport) { setErr("Please select a sport."); return; }
+    if (!date)  { setErr("Please select a date."); return; }
+    if (!homeTeam.trim()) { setErr("Please enter the home team."); return; }
+    if (!homeDesc) { setErr("Please select a description for the home team."); return; }
+    if (!awayTeam.trim()) { setErr("Please enter the away team."); return; }
+    if (!awayDesc) { setErr("Please select a description for the away team."); return; }
+    if (normalize(homeTeam)===normalize(awayTeam)&&normalize(homeDesc)===normalize(awayDesc)) { setErr("Home and away team cannot be the same."); return; }
+
+    setLoading(true);
+
+    // Upsert sport
+    let { data: sportRow } = await supabase.from('sports').select('id').eq('name', SPORTS[sport].name).maybeSingle();
+    if (!sportRow) {
+      const { data } = await supabase.from('sports').insert({ name: SPORTS[sport].name }).select('id').single();
+      sportRow = data;
+    }
+
+    // Upsert schools
+    async function upsertSchool(name) {
+      let { data } = await supabase.from('schools').select('id').eq('name', name).maybeSingle();
+      if (!data) {
+        const { data: newS } = await supabase.from('schools').insert({ name }).select('id').single();
+        data = newS;
+      }
+      return data;
+    }
+
+    const [homeSchool, awaySchool] = await Promise.all([upsertSchool(homeTeam.trim()), upsertSchool(awayTeam.trim())]);
+
+    const { data: match, error } = await supabase.from('matches').insert({
+      sport_id: sportRow.id,
+      home_school_id: homeSchool.id,
+      away_school_id: awaySchool.id,
+      home_team_desc: homeDesc,
+      away_team_desc: awayDesc,
+      match_date: date,
+      scheduled_at: time ? `${date}T${time}:00` : null,
+      status: 'upcoming',
+      period: 'Not started',
+      added_by: user.id,
+    }).select('id').single();
+
+    if (error) {
+      if (error.code === '23505') { setErr("This fixture already exists for that date."); }
+      else { setErr(error.message); }
+      setLoading(false);
+      return;
+    }
+
+    // Create empty scores row
+    await supabase.from('scores').insert({ match_id: match.id });
+    setLoading(false);
+    onAdd();
   }
 
   return (
@@ -321,20 +396,21 @@ function AddFixture({matches,allSchools,onAdd,onCancel}) {
           </div>
         </div>
       ))}
-      <button onClick={handleAdd} style={{width:"100%",padding:12,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,marginTop:8}}>
-        Add fixture
+      <button onClick={handleAdd} disabled={loading} style={{width:"100%",padding:12,borderRadius:10,background:"#1d4ed8",color:"#fff",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,marginTop:8,opacity:loading?0.7:1}}>
+        {loading?"Adding...":"Add fixture"}
       </button>
     </div>
   );
 }
 
 // ── Match detail ──────────────────────────────────────
-function MatchDetail({match,user,onBack,onUpdate,onScoreUpdate,onConfirm}) {
+function MatchDetail({match,user,onBack,onMatchUpdated}) {
   const [msg,setMsg]=useState("");
   const [showScore,setShowScore]=useState(false);
   const [hScore,setHScore]=useState(String(match.homeScore));
   const [aScore,setAScore]=useState(String(match.awayScore));
   const [hasVoted,setHasVoted]=useState(false);
+  const [submitting,setSubmitting]=useState(false);
   const isCricket=match.sport==="cricket";
   const [wickets,setWickets]=useState(String(match.wickets??0));
   const [overs,setOvers]=useState(String(match.overs??0));
@@ -342,19 +418,61 @@ function MatchDetail({match,user,onBack,onUpdate,onScoreUpdate,onConfirm}) {
   const confirmations=match.confirmations||0;
   const scoreLocked=confirmations>=3;
 
-  function submitUpdate() {
+  async function submitUpdate() {
     if (!msg.trim()||!user) return;
-    onUpdate({id:Date.now(),author:user.name,verified:true,text:msg.trim(),ts:Date.now()});
+    setSubmitting(true);
+    await supabase.from('spectator_updates').insert({
+      match_id: match.id,
+      user_id: user.id,
+      content: msg.trim(),
+      author_name: user.user_metadata?.display_name ?? user.email,
+    });
     setMsg("");
+    setSubmitting(false);
+    onMatchUpdated();
   }
-  function submitScore() {
-    onScoreUpdate(Number(hScore),Number(aScore),isCricket?{wickets:Number(wickets),overs:Number(overs)}:null);
-    setShowScore(false);
+
+async function submitScore() {
+  const update = {
+    home_score: Number(hScore),
+    away_score: Number(aScore),
+    updated_at: new Date().toISOString(),
+  };
+  if (isCricket) {
+    update.away_wickets = Number(wickets);
+    update.away_overs = Number(overs);
   }
-  function handleConfirm() {
+  const { data, error } = await supabase
+    .from('scores')
+    .update(update)
+    .eq('match_id', match.id);
+  console.log('score update result:', data, error);
+
+  const { data: mData, error: mError } = await supabase
+    .from('matches')
+    .update({ status: 'live' })
+    .eq('id', match.id);
+  console.log('match update result:', mData, mError);
+
+  setShowScore(false);
+  onMatchUpdated();
+}
+
+  async function handleConfirm() {
     if (hasVoted||scoreLocked) return;
-    const next=confirmations+1; setHasVoted(true); onConfirm(next);
-    if (next>=3) onUpdate({id:Date.now(),author:"System",verified:true,text:`Score confirmed as final: ${match.homeTeam} ${match.homeDesc} ${match.homeScore} – ${match.awayScore} ${match.awayTeam} ${match.awayDesc}`,ts:Date.now()});
+    setHasVoted(true);
+    const newCount = confirmations + 1;
+    const isFinal = newCount >= 3;
+    await supabase.from('scores').update({ confirmed_final: isFinal }).eq('match_id', match.id);
+    if (isFinal) {
+      await supabase.from('matches').update({ status: 'final' }).eq('id', match.id);
+      await supabase.from('spectator_updates').insert({
+        match_id: match.id,
+        user_id: user?.id ?? null,
+        content: `Score confirmed as final: ${match.homeTeam} ${match.homeDesc} ${match.homeScore} – ${match.awayScore} ${match.awayTeam} ${match.awayDesc}`,
+      });
+    }
+    onMatchUpdated();
   }
 
   return (
@@ -462,12 +580,15 @@ function MatchDetail({match,user,onBack,onUpdate,onScoreUpdate,onConfirm}) {
         <div style={{fontSize:13,fontWeight:500,marginBottom:10,color:"var(--color-text-primary)"}}>Post an update</div>
         {user?(
           <>
-            <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:8}}>Posting as <strong style={{fontWeight:500}}>{user.name}</strong> <span style={{background:"#eff6ff",color:"#1d4ed8",borderRadius:10,padding:"1px 6px",fontSize:10}}>verified</span></div>
+            <div style={{fontSize:12,color:"var(--color-text-secondary)",marginBottom:8}}>
+              Posting as <strong style={{fontWeight:500}}>{user.user_metadata?.display_name ?? user.email}</strong>
+              <span style={{background:"#eff6ff",color:"#1d4ed8",borderRadius:10,padding:"1px 6px",fontSize:10,marginLeft:6}}>verified</span>
+            </div>
             <textarea placeholder="What's happening? Share a score update, goal, wicket..." value={msg} onChange={e=>setMsg(e.target.value)} rows={3}
               style={{width:"100%",boxSizing:"border-box",padding:"8px 12px",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)",color:"var(--color-text-primary)",fontSize:14,resize:"none",fontFamily:"inherit"}}/>
-            <button onClick={submitUpdate} disabled={!msg.trim()}
+            <button onClick={submitUpdate} disabled={!msg.trim()||submitting}
               style={{marginTop:8,width:"100%",padding:10,borderRadius:8,background:msg.trim()?"#1d4ed8":"#94a3b8",color:"#fff",border:"none",cursor:msg.trim()?"pointer":"not-allowed",fontSize:14,fontWeight:500,transition:"background 0.15s"}}>
-              Post update
+              {submitting?"Posting...":"Post update"}
             </button>
           </>
         ):(
@@ -482,19 +603,59 @@ function MatchDetail({match,user,onBack,onUpdate,onScoreUpdate,onConfirm}) {
 
 // ── App root ──────────────────────────────────────────
 export default function App() {
-  const [users,setUsers]=useState([
-    {id:1,name:"Ms Patel",email:"patel@school.com",pw:"teacher1",favSchools:["St John's"],favTeams:["U14"]},
-    {id:2,name:"Raj",email:"raj@example.com",pw:"raj1234",favSchools:["St John's","Greenfield"],favTeams:["1st XI"]},
-  ]);
   const [user,setUser]=useState(null);
-  const [matches,setMatches]=useState(INIT_MATCHES);
+  const [authLoading,setAuthLoading]=useState(true);
+  const [matches,setMatches]=useState([]);
+  const [matchesLoading,setMatchesLoading]=useState(true);
   const [selectedId,setSelectedId]=useState(null);
-  const [screen,setScreen]=useState("home"); // home | auth | profile | add
+  const [screen,setScreen]=useState("home");
   const [statusFilter,setStatusFilter]=useState("all");
   const [sportFilter,setSportFilter]=useState("all");
   const [schoolSearch,setSchoolSearch]=useState("");
   const [showFilters,setShowFilters]=useState(false);
   const [favOnly,setFavOnly]=useState(false);
+
+  // Auth listener
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{
+      setUser(session?.user??null);
+      setAuthLoading(false);
+    });
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_,session)=>{
+      setUser(session?.user??null);
+    });
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  const loadMatches = useCallback(async ()=>{
+    setMatchesLoading(true);
+    const {data,error}=await supabase
+      .from('matches')
+      .select(`
+        *,
+        scores(*),
+        spectator_updates(*),
+        sport:sports(name),
+        home_school:schools!home_school_id(name),
+        away_school:schools!away_school_id(name)
+      `)
+      .order('match_date',{ascending:false});
+    if (!error&&data) setMatches(data.map(mapMatch));
+    setMatchesLoading(false);
+  },[]);
+
+  useEffect(()=>{ loadMatches(); },[loadMatches]);
+
+  // Realtime subscription
+  useEffect(()=>{
+    const channel=supabase
+      .channel('match-changes')
+      .on('postgres_changes',{event:'*',schema:'public',table:'scores'},()=>loadMatches())
+      .on('postgres_changes',{event:'*',schema:'public',table:'spectator_updates'},()=>loadMatches())
+      .on('postgres_changes',{event:'*',schema:'public',table:'matches'},()=>loadMatches())
+      .subscribe();
+    return ()=>supabase.removeChannel(channel);
+  },[loadMatches]);
 
   const allSchools=useMemo(()=>{
     const s=new Set(KNOWN_SCHOOLS);
@@ -506,30 +667,25 @@ export default function App() {
     if (statusFilter!=="all"&&m.status!==statusFilter) return false;
     if (sportFilter!=="all"&&m.sport!==sportFilter) return false;
     if (schoolSearch.trim()){const q=schoolSearch.toLowerCase();if(!m.homeTeam.toLowerCase().includes(q)&&!m.awayTeam.toLowerCase().includes(q))return false;}
-    if (favOnly&&user){
-      const schoolMatch=user.favSchools.length===0||(user.favSchools.includes(m.homeTeam)||user.favSchools.includes(m.awayTeam));
-      const teamMatch=user.favTeams.length===0||(user.favTeams.includes(m.homeDesc)||user.favTeams.includes(m.awayDesc));
-      if (!schoolMatch||!teamMatch) return false;
-    }
     return true;
-  }),[matches,statusFilter,sportFilter,schoolSearch,favOnly,user]);
+  }),[matches,statusFilter,sportFilter,schoolSearch]);
 
   const selected=matches.find(m=>m.id===selectedId)||null;
 
-  function addUpdate(matchId,update){setMatches(ms=>ms.map(m=>m.id===matchId?{...m,updates:[...m.updates,update]}:m));}
-  function updateScore(matchId,home,away,extra){setMatches(ms=>ms.map(m=>m.id===matchId?{...m,homeScore:home,awayScore:away,...(extra||{})}:m));}
-  function confirmScore(matchId,count){setMatches(ms=>ms.map(m=>m.id===matchId?{...m,confirmations:count,status:count>=3?"final":m.status}:m));}
-  function saveProfile(updated){setUsers(us=>us.map(u=>u.id===updated.id?updated:u));setUser(updated);}
-  function handleLogin(u){setUser(u);setScreen("home");}
-  function handleRegister(u){setUsers(us=>[...us,u]);setUser(u);setScreen("home");}
-  function handleLogout(){setUser(null);setScreen("home");setFavOnly(false);}
+  async function handleLogout(){
+    await supabase.auth.signOut();
+    setUser(null);
+    setScreen("home");
+    setFavOnly(false);
+  }
 
-  if (screen==="auth") return <AuthScreen users={users} onLogin={handleLogin} onRegister={handleRegister}/>;
-  if (screen==="profile"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><ProfileScreen user={user} matches={matches} onSave={saveProfile} onLogout={handleLogout} onBack={()=>setScreen("home")}/></div>;
-  if (screen==="add"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><AddFixture matches={matches} allSchools={allSchools} onAdd={m=>{setMatches(ms=>[m,...ms]);setScreen("home");}} onCancel={()=>setScreen("home")}/></div>;
-  if (selected) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><MatchDetail match={selected} user={user} onBack={()=>setSelectedId(null)} onUpdate={u=>addUpdate(selected.id,u)} onScoreUpdate={(h,a,e)=>updateScore(selected.id,h,a,e)} onConfirm={c=>confirmScore(selected.id,c)}/></div>;
+  if (authLoading) return <div style={{textAlign:"center",padding:40,color:"var(--color-text-secondary)",fontFamily:"var(--font-sans)"}}>Loading...</div>;
+  if (screen==="auth") return <AuthScreen onDone={()=>setScreen("home")}/>;
+  if (screen==="profile"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><ProfileScreen user={user} matches={matches} onLogout={handleLogout} onBack={()=>setScreen("home")}/></div>;
+  if (screen==="add"&&user) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><AddFixture matches={matches} allSchools={allSchools} user={user} onAdd={()=>{loadMatches();setScreen("home");}} onCancel={()=>setScreen("home")}/></div>;
+  if (selected) return <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}><MatchDetail match={selected} user={user} onBack={()=>setSelectedId(null)} onMatchUpdated={()=>{loadMatches();}}/></div>;
 
-  const anyFilter=statusFilter!=="all"||sportFilter!=="all"||schoolSearch.trim()||favOnly;
+  const anyFilter=statusFilter!=="all"||sportFilter!=="all"||schoolSearch.trim();
 
   return (
     <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}>
@@ -542,7 +698,7 @@ export default function App() {
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {user?(
             <button onClick={()=>setScreen("profile")} style={{width:34,height:34,borderRadius:"50%",background:"#eff6ff",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,color:"#1d4ed8"}}>
-              {user.name.charAt(0).toUpperCase()}
+              {(user.user_metadata?.display_name??user.email).charAt(0).toUpperCase()}
             </button>
           ):(
             <button onClick={()=>setScreen("auth")} style={{padding:"6px 14px",borderRadius:20,border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -571,7 +727,6 @@ export default function App() {
               {s==="all"?"All":s.charAt(0).toUpperCase()+s.slice(1)}
             </button>
           ))}
-          {user&&<button onClick={()=>setFavOnly(f=>!f)} style={pill(favOnly)}>★ Favourites</button>}
         </div>
         <button onClick={()=>setShowFilters(f=>!f)} style={{...pill(showFilters||sportFilter!=="all"),marginLeft:6,flexShrink:0}}>🎯 Sport</button>
       </div>
@@ -586,15 +741,19 @@ export default function App() {
       )}
 
       <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:10}}>
-        {filtered.length===0?"No matches found":`${filtered.length} match${filtered.length!==1?"es":""}`}
-        {anyFilter&&<> · <button onClick={()=>{setStatusFilter("all");setSportFilter("all");setSchoolSearch("");setFavOnly(false);}} style={{background:"none",border:"none",color:"#1d4ed8",cursor:"pointer",fontSize:12,padding:0}}>Clear filters</button></>}
+        {matchesLoading?"Loading matches...":`${filtered.length} match${filtered.length!==1?"es":""}`}
+        {anyFilter&&!matchesLoading&&<> · <button onClick={()=>{setStatusFilter("all");setSportFilter("all");setSchoolSearch("");}} style={{background:"none",border:"none",color:"#1d4ed8",cursor:"pointer",fontSize:12,padding:0}}>Clear filters</button></>}
       </div>
 
-      {filtered.length===0?(
+      {matchesLoading?(
         <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-tertiary)"}}>
-          <div style={{fontSize:32,marginBottom:8}}>🔍</div>
-          <div style={{fontSize:14}}>No matches found</div>
-          <div style={{fontSize:12,marginTop:4}}>Try adjusting your search or filters</div>
+          <div style={{fontSize:14}}>Loading matches...</div>
+        </div>
+      ):filtered.length===0?(
+        <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-tertiary)"}}>
+          <div style={{fontSize:32,marginBottom:8}}>🏆</div>
+          <div style={{fontSize:14}}>No matches yet</div>
+          <div style={{fontSize:12,marginTop:4}}>Add a fixture to get started</div>
         </div>
       ):filtered.map(m=><MatchCard key={m.id} match={m} onClick={id=>setSelectedId(id)}/>)}
     </div>
