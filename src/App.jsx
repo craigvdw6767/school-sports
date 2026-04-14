@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase";
 import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom";
 import Landing from "./Landing";
+import SchoolPage from "./SchoolPage";
 
 const SPORTS = {
   football:   { name:"Football",   icon:"⚽" },
@@ -715,8 +716,7 @@ export default function App() {
     await supabase.auth.signOut();
     setUser(null); setScreen("home");
   }
-
-  if (authLoading) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"#888"}}>Loading...</div>;
+  
   if (screen==="auth") return <AuthScreen onDone={()=>setScreen("home")}/>;
   if (screen==="profile"&&user) return <ProfileScreen user={user} onLogout={handleLogout} onBack={()=>setScreen("home")}/>;
   if (screen==="add"&&user) return <AddFixture schoolsList={schoolsList} user={user} onAdd={()=>{loadMatches();setScreen("home");}} onCancel={()=>setScreen("home")}/>;
@@ -727,6 +727,7 @@ export default function App() {
     <Routes>
       <Route path="/match/:id" element={<MatchPage user={user}/>}/>
       <Route path="/" element={<Landing/>}/>
+      <Route path="/school/:id" element={<SchoolPage user={user}/>}/>
       <Route path="/app" element={
         <div style={{maxWidth:420,margin:"0 auto",fontFamily:"var(--font-sans)"}}>
           <div style={S.darkHeader}>
