@@ -456,12 +456,21 @@ function MatchDetail({match, user, onBack, onMatchUpdated}) {
   }
 
   async function submitScore() {
-    const update = { home_score:Number(hScore), away_score:Number(aScore), updated_at:new Date().toISOString() };
-    if (isCricket) { update.away_wickets=Number(wickets); update.away_overs=Number(overs); }
-    await supabase.from('scores').update(update).eq('match_id', match.id);
-    await supabase.from('matches').update({ status:'live' }).eq('id', match.id);
-    setShowScore(false); onMatchUpdated();
-  }
+      console.log('match id:', match.id);
+  console.log('match object:', match);
+  const update = { home_score:Number(hScore), away_score:Number(aScore), updated_at:new Date().toISOString() };
+  if (isCricket) { update.away_wickets=Number(wickets); update.away_overs=Number(overs); }
+  
+  const { data: scoreData, error: scoreError } = await supabase
+    .from('scores').update(update).eq('match_id', match.id);
+
+  const { data: matchData, error: matchError } = await supabase
+    .from('matches').update({ status:'live' }).eq('id', match.id);
+  
+
+  setShowScore(false);
+window.location.reload();
+}
 
   async function handleConfirm() {
     if (hasVoted||scoreLocked) return;
@@ -612,14 +621,14 @@ function MatchPage({user}) {
   const [match, setMatch] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  async function loadMatch() {
+  const loadMatch = useCallback(async () => {
     const { data } = await supabase
       .from('matches')
       .select(`*, scores(*), spectator_updates(*), sport:sports(name), home_school:schools!home_school_id(name), away_school:schools!away_school_id(name)`)
       .eq('id', id).single();
     if (data) setMatch(mapMatch(data));
     setLoading(false);
-  }
+  }, [id]);
 
   useEffect(() => {
     loadMatch();
@@ -628,7 +637,7 @@ function MatchPage({user}) {
       .on('postgres_changes',{event:'*',schema:'public',table:'spectator_updates'},loadMatch)
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [id]);
+  }, [id, loadMatch]);
 
   if (loading) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"#888"}}>Loading...</div>;
   if (!match) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"#888"}}>Match not found.</div>;
