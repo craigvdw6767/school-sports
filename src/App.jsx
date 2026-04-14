@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase";
 import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom";
+import Landing from "./Landing";
 
 const SPORTS = {
   football:   { name:"Football",   icon:"⚽" },
@@ -727,7 +728,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/match/:id" element={<MatchPage user={user}/>}/>
-      <Route path="*" element={
+      <Route path="/" element={<Landing/>}/>
+      <Route path="/app" element={
         <div style={{maxWidth:420,margin:"0 auto",fontFamily:"var(--font-sans)"}}>
           <div style={S.darkHeader}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
