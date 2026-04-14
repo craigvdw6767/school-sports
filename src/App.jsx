@@ -17,8 +17,12 @@ const SPORT_NAME_TO_KEY = Object.fromEntries(
   Object.entries(SPORTS).map(([k,v]) => [v.name.toLowerCase(), k])
 );
 
-const TEAM_DESCRIPTIONS = ["1st XI","2nd XI","3rd XI","U10","U11","U12","U13","U14","U15","U16","U17","U18","A Team","B Team","C Team","Senior","Junior"];
-const KNOWN_SCHOOLS = ["St John's","Riverside High","Northview","Greenfield","Westpark","Lakeside","Cedar Park"];
+const TEAM_DESCRIPTIONS = [
+  "1st Team","2nd Team","3rd Team","4th Team","5th Team","6th Team","7th Team","8th Team",
+  "U10","U11","U12","U13","U14","U15","U16","U17","U18",
+  "A Team","B Team","C Team",
+  "Senior","Junior"
+];
 
 function normalize(s) { return s.trim().toLowerCase().replace(/\s+/g," "); }
 function timeAgo(ts) {
@@ -322,7 +326,7 @@ function SchoolPicker({label, searchVal, setSearchVal, selectedId, setSelectedId
 }
 
 // ── Add fixture ───────────────────────────────────────
-function AddFixture({matches, allSchools, schoolsList, user, onAdd, onCancel}) {
+function AddFixture({schoolsList, user, onAdd, onCancel}) {
   const [sport,setSport]=useState("");
   const [date,setDate]=useState("");
   const [time,setTime]=useState("");
@@ -700,12 +704,6 @@ export default function App() {
     return ()=>supabase.removeChannel(channel);
   },[loadMatches]);
 
-  const allSchools=useMemo(()=>{
-    const s=new Set(KNOWN_SCHOOLS);
-    matches.forEach(m=>{s.add(m.homeTeam);s.add(m.awayTeam);});
-    return Array.from(s).sort();
-  },[matches]);
-
   const filtered=useMemo(()=>matches.filter(m=>{
     if (statusFilter!=="all"&&m.status!==statusFilter) return false;
     if (sportFilter!=="all"&&m.sport!==sportFilter) return false;
@@ -721,7 +719,7 @@ export default function App() {
   if (authLoading) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"#888"}}>Loading...</div>;
   if (screen==="auth") return <AuthScreen onDone={()=>setScreen("home")}/>;
   if (screen==="profile"&&user) return <ProfileScreen user={user} onLogout={handleLogout} onBack={()=>setScreen("home")}/>;
-  if (screen==="add"&&user) return <AddFixture matches={matches} allSchools={allSchools} schoolsList={schoolsList} user={user} onAdd={()=>{loadMatches();setScreen("home");}} onCancel={()=>setScreen("home")}/>;
+  if (screen==="add"&&user) return <AddFixture schoolsList={schoolsList} user={user} onAdd={()=>{loadMatches();setScreen("home");}} onCancel={()=>setScreen("home")}/>;
 
   const anyFilter=statusFilter!=="all"||sportFilter!=="all"||schoolSearch.trim();
 
