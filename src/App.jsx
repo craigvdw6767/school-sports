@@ -291,6 +291,49 @@ function MatchCard({match,onClick}) {
 }
 
 // ── Add fixture ───────────────────────────────────────
+function SchoolPicker({label, searchVal, setSearchVal, selectedId, setSelectedId, filtered, schoolsList}) {
+  const [open, setOpen] = useState(false);
+  const selected = schoolsList.find(s => s.id === selectedId);
+  return (
+    <div style={{marginBottom:10}}>
+      <label style={labelStyle}>{label}</label>
+      {selected ? (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
+          <div>
+            <span style={{fontSize:14,color:"var(--color-text-primary)",fontWeight:500}}>{selected.name}</span>
+            {selected.city && <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:8}}>{selected.city}</span>}
+          </div>
+          <button onClick={()=>{setSelectedId("");setSearchVal("");}} style={{background:"none",border:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>
+        </div>
+      ) : (
+        <div style={{position:"relative"}}>
+          <input
+            value={searchVal}
+            onChange={e=>{setSearchVal(e.target.value);setOpen(true);}}
+            onFocus={()=>setOpen(true)}
+            onBlur={()=>setTimeout(()=>setOpen(false),150)}
+            placeholder="Search school..."
+            style={inputStyle}
+          />
+          {open && filtered.length > 0 && (
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,zIndex:10,maxHeight:200,overflowY:"auto"}}>
+              {filtered.map(s => (
+                <div key={s.id}
+                  onMouseDown={()=>{setSelectedId(s.id);setSearchVal("");setOpen(false);}}
+                  style={{padding:"10px 12px",cursor:"pointer",borderBottom:"0.5px solid var(--color-border-tertiary)"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="var(--color-background-secondary)"}
+                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                  <div style={{fontSize:14,color:"var(--color-text-primary)"}}>{s.name}</div>
+                  {s.city && <div style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{s.city}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 function AddFixture({matches, allSchools, schoolsList, user, onAdd, onCancel}) {
   const [sport, setSport] = useState("");
   const [date, setDate] = useState("");
@@ -359,50 +402,7 @@ function AddFixture({matches, allSchools, schoolsList, user, onAdd, onCancel}) {
     onAdd();
   }
 
-  function SchoolPicker({label, searchVal, setSearchVal, selectedId, setSelectedId, filtered}) {
-    const [open, setOpen] = useState(false);
-    const selected = schoolsList.find(s => s.id === selectedId);
-    return (
-      <div style={{marginBottom:10}}>
-        <label style={labelStyle}>{label}</label>
-        {selected ? (
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 12px",borderRadius:8,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-secondary)"}}>
-            <div>
-              <span style={{fontSize:14,color:"var(--color-text-primary)",fontWeight:500}}>{selected.name}</span>
-              {selected.city && <span style={{fontSize:12,color:"var(--color-text-tertiary)",marginLeft:8}}>{selected.city}</span>}
-            </div>
-            <button onClick={()=>{setSelectedId("");setSearchVal("");}} style={{background:"none",border:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>
-          </div>
-        ) : (
-          <div style={{position:"relative"}}>
-            <input
-              value={searchVal}
-              onChange={e=>{setSearchVal(e.target.value);setOpen(true);}}
-              onFocus={()=>setOpen(true)}
-              onBlur={()=>setTimeout(()=>setOpen(false),150)}
-              placeholder="Search school..."
-              style={inputStyle}
-            />
-            {open && filtered.length > 0 && (
-              <div style={{position:"absolute",top:"100%",left:0,right:0,background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-secondary)",borderRadius:8,zIndex:10,maxHeight:200,overflowY:"auto"}}>
-                {filtered.map(s => (
-                  <div key={s.id}
-                    onMouseDown={()=>{setSelectedId(s.id);setSearchVal("");setOpen(false);}}
-                    style={{padding:"10px 12px",cursor:"pointer",borderBottom:"0.5px solid var(--color-border-tertiary)"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="var(--color-background-secondary)"}
-                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                    <div style={{fontSize:14,color:"var(--color-text-primary)"}}>{s.name}</div>
-                    {s.city && <div style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{s.city}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }
-
+ 
   return (
     <div style={{paddingBottom:80}}>
       <button onClick={onCancel} style={{background:"none",border:"none",color:"var(--color-text-secondary)",fontSize:14,cursor:"pointer",padding:"12px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
@@ -441,6 +441,7 @@ function AddFixture({matches, allSchools, schoolsList, user, onAdd, onCancel}) {
             selectedId={selectedId}
             setSelectedId={setSelectedId}
             filtered={filtered}
+            schoolsList={schoolsList}
           />
           <div>
             <label style={labelStyle}>Team description</label>
