@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase";
+import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom";
 
 const SPORTS = {
   football:   { name:"Football",   icon:"⚽" },
@@ -256,9 +257,10 @@ function ProfileScreen({user,matches,onLogout,onBack}) {
 
 // ── Match card ────────────────────────────────────────
 function MatchCard({match,onClick}) {
+  const navigate = useNavigate();
   const sport=SPORTS[match.sport];
   return (
-    <div onClick={()=>onClick(match.id)} style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:12,padding:"14px 16px",cursor:"pointer",marginBottom:10}}>
+    <div onClick={()=>navigate(`/match/${match.id}`)} style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:12,padding:"14px 16px",cursor:"pointer",marginBottom:10}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <span style={{fontSize:13,color:"var(--color-text-secondary)"}}>{sport.icon} {sport.name}</span>
         <Badge status={match.status}/>
@@ -283,12 +285,17 @@ function MatchCard({match,onClick}) {
         </div>
       </div>
       <div style={{marginTop:10,borderTop:"0.5px solid var(--color-border-tertiary)",paddingTop:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{fmtDate(match.date)||""}</span>
-        {match.updates.length>0?<span style={{fontSize:12,color:"var(--color-text-secondary)"}}>💬 {match.updates.length} update{match.updates.length!==1?"s":""}</span>:<span/>}
+          <span style={{fontSize:11,color:"var(--color-text-tertiary)"}}>{fmtDate(match.date)||""}</span>
+          {match.updates.length>0?<span style={{fontSize:12,color:"var(--color-text-secondary)"}}>💬 {match.updates.length} update{match.updates.length!==1?"s":""}</span>:<span/>}
+        </div>
+        <div style={{marginTop:8,textAlign:"right"}}>
+          <button onClick={e=>{e.stopPropagation();const url=`${window.location.origin}/match/${match.id}`;if(navigator.share){navigator.share({title:`${match.homeTeam} vs ${match.awayTeam}`,url});}else{navigator.clipboard.writeText(url);alert("Link copied!");}}} style={{background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:8,padding:"3px 10px",fontSize:11,color:"var(--color-text-tertiary)",cursor:"pointer"}}>
+            🔗 Share
+          </button>
+        </div>
       </div>
-    </div>
-  );
-}
+    );
+  }
 
 // ── Add fixture ───────────────────────────────────────
 function SchoolPicker({label, searchVal, setSearchVal, selectedId, setSelectedId, filtered, schoolsList}) {
@@ -534,7 +541,20 @@ async function submitScore() {
 
   return (
     <div style={{paddingBottom:80}}>
-      <button onClick={onBack} style={{background:"none",border:"none",color:"var(--color-text-secondary)",fontSize:14,cursor:"pointer",padding:"12px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+  <button onClick={onBack} style={{background:"none",border:"none",color:"var(--color-text-secondary)",fontSize:14,cursor:"pointer",padding:"12px 0",display:"flex",alignItems:"center",gap:6}}>← Back</button>
+  <button onClick={()=>{
+    const url = window.location.href;
+    if (navigator.share) {
+      navigator.share({title:`${match.homeTeam} vs ${match.awayTeam}`, url});
+    } else {
+      navigator.clipboard.writeText(url);
+      alert("Link copied!");
+    }
+  }} style={{background:"none",border:"0.5px solid var(--color-border-tertiary)",borderRadius:8,padding:"5px 12px",fontSize:12,color:"var(--color-text-secondary)",cursor:"pointer"}}>
+    🔗 Share match
+  </button>
+</div>
       <div style={{background:"var(--color-background-primary)",border:"0.5px solid var(--color-border-tertiary)",borderRadius:12,padding:16,marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <span style={{fontSize:14,color:"var(--color-text-secondary)"}}>{sport.icon} {sport.name}</span>
@@ -658,6 +678,59 @@ async function submitScore() {
   );
 }
 
+function MatchPage({user}) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const [match, setMatch] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const { data } = await supabase
+        .from('matches')
+        .select(`
+          *,
+          scores(*),
+          spectator_updates(*),
+          sport:sports(name),
+          home_school:schools!home_school_id(name),
+          away_school:schools!away_school_id(name)
+        `)
+        .eq('id', id)
+        .single();
+      if (data) setMatch(mapMatch(data));
+      setLoading(false);
+    }
+    load();
+
+    const channel = supabase
+      .channel(`match-page-${id}`)
+      .on('postgres_changes', {event:'*', schema:'public', table:'scores'}, load)
+      .on('postgres_changes', {event:'*', schema:'public', table:'spectator_updates'}, load)
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [id]);
+
+  if (loading) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"var(--color-text-secondary)"}}>Loading...</div>;
+  if (!match) return <div style={{textAlign:"center",padding:40,fontFamily:"var(--font-sans)",color:"var(--color-text-secondary)"}}>Match not found.</div>;
+
+  return (
+    <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}>
+      <MatchDetail
+        match={match}
+        user={user}
+        onBack={()=>navigate("/")}
+        onMatchUpdated={async ()=>{
+          const { data } = await supabase
+            .from('matches')
+            .select(`*, scores(*), spectator_updates(*), sport:sports(name), home_school:schools!home_school_id(name), away_school:schools!away_school_id(name)`)
+            .eq('id', id).single();
+          if (data) setMatch(mapMatch(data));
+        }}
+      />
+    </div>
+  );
+}
 // ── App root ──────────────────────────────────────────
 export default function App() {
   const [user,setUser]=useState(null);
@@ -757,74 +830,79 @@ useEffect(() => {
   const anyFilter=statusFilter!=="all"||sportFilter!=="all"||schoolSearch.trim();
 
   return (
-    <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}>
-      {/* Header */}
-      <div style={{padding:"16px 0 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div>
-          <div style={{fontSize:20,fontWeight:500,color:"var(--color-text-primary)"}}>School Sports</div>
-          <div style={{fontSize:13,color:"var(--color-text-secondary)"}}>Today's fixtures</div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {user?(
-            <button onClick={()=>setScreen("profile")} style={{width:34,height:34,borderRadius:"50%",background:"#eff6ff",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,color:"#1d4ed8"}}>
-              {(user.user_metadata?.display_name??user.email).charAt(0).toUpperCase()}
+  <Routes>
+    <Route path="/match/:id" element={<MatchPage user={user}/>}/>
+    <Route path="*" element={
+      <div style={{maxWidth:420,margin:"0 auto",padding:"0 16px",fontFamily:"var(--font-sans)"}}>
+        {/* Header */}
+        <div style={{padding:"16px 0 12px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:20,fontWeight:500,color:"var(--color-text-primary)"}}>School Sports</div>
+            <div style={{fontSize:13,color:"var(--color-text-secondary)"}}>Today's fixtures</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {user?(
+              <button onClick={()=>setScreen("profile")} style={{width:34,height:34,borderRadius:"50%",background:"#eff6ff",border:"none",cursor:"pointer",fontSize:15,fontWeight:500,color:"#1d4ed8"}}>
+                {(user.user_metadata?.display_name??user.email).charAt(0).toUpperCase()}
+              </button>
+            ):(
+              <button onClick={()=>setScreen("auth")} style={{padding:"6px 14px",borderRadius:20,border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Sign in
+              </button>
+            )}
+            <button onClick={()=>user?setScreen("add"):setScreen("auth")} style={{padding:"6px 14px",borderRadius:20,border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              + Add
             </button>
-          ):(
-            <button onClick={()=>setScreen("auth")} style={{padding:"6px 14px",borderRadius:20,border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-              Sign in
-            </button>
-          )}
-          <button onClick={()=>user?setScreen("add"):setScreen("auth")} style={{padding:"6px 14px",borderRadius:20,border:"0.5px solid var(--color-border-secondary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            + Add
-          </button>
+          </div>
         </div>
+
+        {/* Search */}
+        <div style={{position:"relative",marginBottom:10}}>
+          <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:"var(--color-text-tertiary)"}}>🔍</span>
+          <input placeholder="Search by school name..." value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}
+            style={{width:"100%",boxSizing:"border-box",padding:"9px 32px",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:14,fontFamily:"inherit"}}/>
+          {schoolSearch&&<button onClick={()=>setSchoolSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>}
+        </div>
+
+        {/* Filter row */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
+            {["all","live","final","upcoming"].map(s=>(
+              <button key={s} onClick={()=>setStatusFilter(s)} style={pill(statusFilter===s)}>
+                {s==="all"?"All":s.charAt(0).toUpperCase()+s.slice(1)}
+              </button>
+            ))}
+          </div>
+          <button onClick={()=>setShowFilters(f=>!f)} style={{...pill(showFilters||sportFilter!=="all"),marginLeft:6,flexShrink:0}}>🎯 Sport</button>
+        </div>
+
+        {showFilters&&(
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12,padding:"10px 12px",background:"var(--color-background-secondary)",borderRadius:10}}>
+            <button onClick={()=>setSportFilter("all")} style={pill(sportFilter==="all")}>All sports</button>
+            {Object.entries(SPORTS).map(([k,s])=>(
+              <button key={k} onClick={()=>setSportFilter(k)} style={pill(sportFilter===k)}>{s.icon} {s.name}</button>
+            ))}
+          </div>
+        )}
+
+        <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:10}}>
+          {matchesLoading?"Loading matches...":`${filtered.length} match${filtered.length!==1?"es":""}`}
+          {anyFilter&&!matchesLoading&&<> · <button onClick={()=>{setStatusFilter("all");setSportFilter("all");setSchoolSearch("");}} style={{background:"none",border:"none",color:"#1d4ed8",cursor:"pointer",fontSize:12,padding:0}}>Clear filters</button></>}
+        </div>
+
+        {matchesLoading?(
+          <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-tertiary)"}}>
+            <div style={{fontSize:14}}>Loading matches...</div>
+          </div>
+        ):filtered.length===0?(
+          <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-tertiary)"}}>
+            <div style={{fontSize:32,marginBottom:8}}>🏆</div>
+            <div style={{fontSize:14}}>No matches yet</div>
+            <div style={{fontSize:12,marginTop:4}}>Add a fixture to get started</div>
+          </div>
+        ):filtered.map(m=><MatchCard key={m.id} match={m} onClick={id=>setSelectedId(id)}/>)}
       </div>
-
-      {/* Search */}
-      <div style={{position:"relative",marginBottom:10}}>
-        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:"var(--color-text-tertiary)"}}>🔍</span>
-        <input placeholder="Search by school name..." value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}
-          style={{width:"100%",boxSizing:"border-box",padding:"9px 32px",borderRadius:10,border:"0.5px solid var(--color-border-tertiary)",background:"var(--color-background-primary)",color:"var(--color-text-primary)",fontSize:14,fontFamily:"inherit"}}/>
-        {schoolSearch&&<button onClick={()=>setSchoolSearch("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"var(--color-text-tertiary)",cursor:"pointer",fontSize:18,lineHeight:1,padding:0}}>×</button>}
-      </div>
-
-      {/* Filter row */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:2}}>
-          {["all","live","final","upcoming"].map(s=>(
-            <button key={s} onClick={()=>setStatusFilter(s)} style={pill(statusFilter===s)}>
-              {s==="all"?"All":s.charAt(0).toUpperCase()+s.slice(1)}
-            </button>
-          ))}
-        </div>
-        <button onClick={()=>setShowFilters(f=>!f)} style={{...pill(showFilters||sportFilter!=="all"),marginLeft:6,flexShrink:0}}>🎯 Sport</button>
-      </div>
-
-      {showFilters&&(
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12,padding:"10px 12px",background:"var(--color-background-secondary)",borderRadius:10}}>
-          <button onClick={()=>setSportFilter("all")} style={pill(sportFilter==="all")}>All sports</button>
-          {Object.entries(SPORTS).map(([k,s])=>(
-            <button key={k} onClick={()=>setSportFilter(k)} style={pill(sportFilter===k)}>{s.icon} {s.name}</button>
-          ))}
-        </div>
-      )}
-
-      <div style={{fontSize:12,color:"var(--color-text-tertiary)",marginBottom:10}}>
-        {matchesLoading?"Loading matches...":`${filtered.length} match${filtered.length!==1?"es":""}`}
-        {anyFilter&&!matchesLoading&&<> · <button onClick={()=>{setStatusFilter("all");setSportFilter("all");setSchoolSearch("");}} style={{background:"none",border:"none",color:"#1d4ed8",cursor:"pointer",fontSize:12,padding:0}}>Clear filters</button></>}
-      </div>
-
-      {matchesLoading?(
-        <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-tertiary)"}}>
-          <div style={{fontSize:14}}>Loading matches...</div>
-        </div>
-      ):filtered.length===0?(
-        <div style={{textAlign:"center",padding:"40px 0",color:"var(--color-text-tertiary)"}}>
-          <div style={{fontSize:32,marginBottom:8}}>🏆</div>
-          <div style={{fontSize:14}}>No matches yet</div>
-          <div style={{fontSize:12,marginTop:4}}>Add a fixture to get started</div>
-        </div>
-      ):filtered.map(m=><MatchCard key={m.id} match={m} onClick={id=>setSelectedId(id)}/>)}
-    </div>
-  );
+    }/>
+  </Routes>
+);
 }
