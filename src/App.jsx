@@ -5,6 +5,7 @@ import Landing from "./Landing";
 import SchoolPage from "./SchoolPage";
 import SchoolsPage from "./SchoolsPage";
 import { Helmet } from "react-helmet-async";
+import RegisterSchool from "./RegisterSchool";
 
 const SPORTS = {
   football:   { name:"Football",   icon:"⚽" },
@@ -745,6 +746,7 @@ export default function App() {
       <Route path="/" element={<Landing/>}/>
       <Route path="/school/:id" element={<SchoolPage user={user}/>}/>
       <Route path="/schools" element={<SchoolsPage/>}/>
+      <Route path="/register-school" element={<RegisterSchool/>}/>
       <Route path="/app" element={
         <div style={{maxWidth:420,margin:"0 auto",fontFamily:"var(--font-sans)"}}>
           <div style={S.darkHeader}>
